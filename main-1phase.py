@@ -12,12 +12,13 @@ Script listens on port 80 and implements following commands:
 
   To setup ESP8266 with micropython pls look on various tutorials. There is plenty of them on Internet
 
-  v1.9 04/01/2017
+  v1.91 04/01/2017
   (c) Piotr Oniszczuk
 """
 
+ver = 1.91
 
-#from ubinascii import hexlify
+from ubinascii import hexlify
 import uctypes
 from time import sleep_ms
 import socket
@@ -106,18 +107,18 @@ def get_data_from_mcp39f521(chipid):
     buf = get_raw_data_from_mcp39f521(chipid,buf)
 
     desc = {
-    "ImportActEnergy":   uctypes.UINT64 | 0,
-    "ExportActEnergy":   uctypes.UINT64 | 8,
-    "ImportReactEnergy": uctypes.UINT64 | 16,
-    "ExportReactEnergy": uctypes.UINT64 | 24,
+    "ImportActEnergy":   uctypes.UINT64 | 2,
+    "ExportActEnergy":   uctypes.UINT64 | 10,
+    "ImportReactEnergy": uctypes.UINT64 | 18,
+    "ExportReactEnergy": uctypes.UINT64 | 26,
     }
 
     values = uctypes.struct(uctypes.addressof(buf), desc, uctypes.LITTLE_ENDIAN)
 
-    ImportActEnergy   = values.ImportActEnergy   / 1000000000.0
-    ExportActEnergy   = values.ExportActEnergy   / 1000000000.0
-    ImportReactEnergy = values.ImportReactEnergy / 1000000000.0
-    ExportReactEnergy = values.ExportReactEnergy / 1000000000.0
+    ImportActEnergy   = values.ImportActEnergy   / 1000000.0
+    ExportActEnergy   = values.ExportActEnergy   / 1000000.0
+    ImportReactEnergy = values.ImportReactEnergy / 1000000.0
+    ExportReactEnergy = values.ExportReactEnergy / 1000000.0
 
     
     return [SysVer,    \
@@ -140,13 +141,13 @@ def get_data_from_mcp39f521(chipid):
 
 html_page = """<!DOCTYPE html>
 <html>
-<head> <title>MCP39F521 Readings</title> 
+<head> <title>Power</title> 
 </head>
-<body><h1>MCP39F521 Readings</h1>
+<body><h1>Power and Energy (v%s)</h1>
 <table border="1"> <tr><th>Parameter</th><th>Value</th></tr> %s </table>
 </body>
 </html>"""
-# HTML page: 279 chars out of 1024 send buffer left
+# HTML page: 274 chars out of 1024 send buffer left
 
 null_page = """%s"""
 json_page = """
@@ -159,7 +160,7 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.bind(('', 80))
 s.listen(5)
 
-print('\n-- MCP39F521 read agent v1.9 (4/01/2017)\n-- (c)Piotr Oniszczuk\n')
+print('\n-- MCP39F521 read agent v{} (4/01/2017)\n-- (c)Piotr Oniszczuk\n'.format(ver))
 
 mem_info()
 
@@ -217,7 +218,7 @@ try:
         else:
             rows = ['<tr><td>%s</td><td><b>%.3f %s</></td></tr>' % (p[0], p[1], p[2]) for p in vals]
             html = html_page
-            response = html % '\n'.join(rows)
+            response = html % (ver, '\n'.join(rows))
  
         conn.send(response)
         conn.close()

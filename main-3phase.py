@@ -12,163 +12,64 @@ Script listens on port 80 and implements following commands:
 
   To setup ESP8266 with micropython pls look on various tutorials. There is plenty of them on Internet
 
-  v3.21 04/01/2017
+  v4.1 09/01/2017
   (c) Piotr Oniszczuk
 """
 
-ver = 3.21
-
-#from ubinascii import hexlify
-import uctypes
 from time import sleep_ms
 import socket
 from micropython import mem_info
-from machine import I2C, Pin, reset
-bus =  I2C(scl=Pin(5), sda=Pin(2), freq=100000)
-
-debug = 0
-chip_id = 0
-
-def send_raw_data_to_mcp39f521(chipid, buf):
-
-    chip_addr = 0x74 + chipid
-
-    try:
-        bus.writeto(chip_addr, buf)
-    except:
-        print ('Erorr durring write on I2C bus...')
-
-
-def get_raw_data_from_mcp39f521(chipid, buf):
-
-    send_raw_data_to_mcp39f521(chipid,buf)
-
-    sleep_ms(10)
-
-    chip_addr = 0x74 + chipid
-
-    buf = bytearray(b'\x00' * 35)
-    try:
-        bus.readfrom_into(chip_addr, buf)
-        if (debug):
-            print ('\nMCP39F521 returns following data:')
-            print (hexlify(buf, b":"))
-    except:
-        print ('Erorr durring read on I2C bus...')
-
-    return (buf)
-
-
-def control_enery_acc_mcp39f521(chipid, state):
-    if (state):
-        # Write 0x01 at 0x0002 address 0x00DC (data sheet page29)
-        buf = bytearray([0xA5, 0x0A, 0x41, 0x00, 0xDC, 0x4D, 0x02, 0x00, 0x01, 0x1C])
-    else:
-        # Write 0x00 at 0x0002 address 0x00DC (data sheet page29)
-        buf = bytearray([0xA5, 0x0A, 0x41, 0x00, 0xDC, 0x4D, 0x02, 0x00, 0x00, 0x1B])
-
-    send_raw_data_to_mcp39f521(chipid,buf)
-
-
-def get_data_from_mcp39f521(chipid):
-
-    # Read 32 bytes starting at 0x0002 address
-    buf = bytearray([0xA5, 0x08, 0x41, 0x00, 0x02, 0x4E, 0x20, 0x5E])
-
-    buf = get_raw_data_from_mcp39f521(chipid,buf)
-
-    desc = {
-    "SysStatus":    uctypes.UINT16 | 2,
-    "SysVer":       uctypes.UINT16 | 4,
-    "Voltage":      uctypes.UINT16 | 6,
-    "Frequency":    uctypes.UINT16 | 8,
-    "PwrFactor":    uctypes.INT16  | 12,
-    "Current":      uctypes.UINT32 | 14,
-    "ActivePwr":    uctypes.UINT32 | 18,
-    "ReactvPwr":    uctypes.UINT32 | 22,
-    "ApprntPwr":    uctypes.UINT32 | 26,
-    }
-
-    values = uctypes.struct(uctypes.addressof(buf), desc, uctypes.LITTLE_ENDIAN)
-
-    SysVer    = values.SysVer
-    SysStatus = values.SysStatus
-    Voltage   = (values.Voltage)   / 10.0
-    Current   = (values.Current)   / 10000.0
-    Frequency = (values.Frequency) / 1000.0
-    ActivePwr = (values.ActivePwr) / 100.0
-    ReactvPwr = (values.ReactvPwr) / 100.0 
-    ApprntPwr = (values.ApprntPwr) / 100.0
-    PwrFactor = (values.PwrFactor) * 0.000030517578125
-
-    # Read 32 bytes starting at 0x001E address
-    buf = bytearray([0xA5, 0x08, 0x41, 0x00, 0x1E, 0x4E, 0x20, 0x7A])
-
-    buf = get_raw_data_from_mcp39f521(chipid,buf)
-
-    desc = {
-    "ImportActEnergy":   uctypes.UINT64 | 2,
-    "ExportActEnergy":   uctypes.UINT64 | 10,
-    "ImportReactEnergy": uctypes.UINT64 | 18,
-    "ExportReactEnergy": uctypes.UINT64 | 26,
-    }
-
-    values = uctypes.struct(uctypes.addressof(buf), desc, uctypes.LITTLE_ENDIAN)
-
-    ImportActEnergy   = values.ImportActEnergy   / 1000000.0
-    ExportActEnergy   = values.ExportActEnergy   / 1000000.0
-    ImportReactEnergy = values.ImportReactEnergy / 1000000.0
-    ExportReactEnergy = values.ExportReactEnergy / 1000000.0
-    
-    return [SysVer,    \
-            SysStatus, \
-            Voltage,   \
-            Current,   \
-            Frequency, \
-            ActivePwr, \
-            ReactvPwr, \
-            ApprntPwr, \
-            PwrFactor, \
-            ImportActEnergy,  \
-            ExportActEnergy,  \
-            ImportReactEnergy,\
-            ExportReactEnergy]
-
-
-
-
-
+from machine import reset
+import MCP39F521
 
 html_page = """<!DOCTYPE html>
 <html>
-<head><title>Pwr</title></head>
-<body><h1>v%s</h1>
-<table border="1"><tr><th></th><th>R</th><th>S</th><th>T</th></tr>%s</table>
+<head>
+<title>3-Phase Power</title>
+<style>table {width:500px;}
+table, th, td {border: 1px solid grey; border-collapse: collapse;}
+th, td {padding: 5px; text-align: left;}
+table#t01 tr:nth-child(even) { background-color: #eee;}
+table#t01 tr:nth-child(odd) {background-color: #fff;}
+table#t01 th {background-color: #99e; color: white;}
+</style>
+</head>
+<body><h1>3-Phase Power and Energy</h1>
+<table id="t01"><tr><th>Parameter</th><th>R Line</th><th>S Line</th><th>T Line</th></tr>%s</table>
+Ver:4.1, Free Mem: %s bytes
 </body>
 </html>"""
-# HTML page: 2 chars free out of 1024 send buffer
 
 null_page = """%s"""
-json_page = """
-{
-"line_R": {
+json_page = """{
+"power-and-energy":{
+"R_Line":{
 %s
+"Name":"R"
 },
-"line_S": {
+"S_Line":{
 %s
+"Name":"S"
 },
-"line_T": {
+"T_Line":{
 %s
+"Name":"T"
 },
+"Resources":{
+"Free Mem":%s    
 }
-"""
-    
+}
+}"""
+
+MCP39F521.control_energy_acc(0, True)
+MCP39F521.control_energy_acc(1, True)
+MCP39F521.control_energy_acc(2, True)
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.bind(('', 80))
 s.listen(5)
 
-print('\n-- MCP39F521 3-phase read agent v{} (4/01/2017)\n-- (c)Piotr Oniszczuk\n'.format(ver))
+print('\n-- MCP39F521 3-phase read agent v4.1 (10/01/2017)\n-- (c)Piotr Oniszczuk\n')
 
 mem_info()
 
@@ -182,9 +83,9 @@ try:
         request = conn.recv(1024) 
         request = str(request)
 
-        data_R = get_data_from_mcp39f521(0)
-        data_S = get_data_from_mcp39f521(1)
-        data_T = get_data_from_mcp39f521(2)
+        data_R = MCP39F521.get_data(0)
+        data_S = MCP39F521.get_data(1)
+        data_T = MCP39F521.get_data(2)
 
         vals = [['Voltage'               ,data_R[2], data_S[2], data_T[2],  'V'   ], \
                 ['Current'               ,data_R[3], data_S[3], data_T[3],  'A'   ], \
@@ -216,35 +117,36 @@ try:
             rows_R = ['"%s":%.3f,' % (p[0], p[1]) for p in vals]
             rows_S = ['"%s":%.3f,' % (p[0], p[2]) for p in vals]
             rows_T = ['"%s":%.3f,' % (p[0], p[3]) for p in vals]
-            response = html % ('\n'.join(rows_R), '\n'.join(rows_S), '\n'.join(rows_T)) 
+            response = html % ('\n'.join(rows_R), '\n'.join(rows_S), '\n'.join(rows_T), str(gc.mem_free())) 
 
         elif eng_acc_on == 6:
-            control_enery_acc_mcp39f521(0, True)
-            control_enery_acc_mcp39f521(1, True)
-            control_enery_acc_mcp39f521(2, True)
+            MCP39F521.control_energy_acc(0, True)
+            MCP39F521.control_energy_acc(1, True)
+            MCP39F521.control_energy_acc(2, True)
             html = null_page
-            response = html % '\n\nTurning ON Energy Accumulation...\n\n'
+            response = html % '\n\nEnergy Acc. ON...\n\n'
 
         elif eng_acc_off == 6:
-            control_enery_acc_mcp39f521(0, False)
-            control_enery_acc_mcp39f521(1, False)
-            control_enery_acc_mcp39f521(2, False)
+            MCP39F521.control_energy_acc(0, False)
+            MCP39F521.control_energy_acc(1, False)
+            MCP39F521.control_energy_acc(2, False)
             html = null_page
-            response = html % '\n\nTurning OFF Energy Accumulation...\n\n'
+            response = html % '\n\nEnergy Acc. OFF...\n\n'
 
         else:
-            rows = ['<tr><td>%s</td><td>%.3f %s</td><td>%.3f %s</td><td>%.3f %s</td></tr>' % (p[0], p[1], p[4], p[2], p[4], p[3], p[4]) for p in vals]
+            rows = ['<tr><td>%s</td><td><b>%.3f %s</b></td><td><b>%.3f %s</b></td><td><b>%.3f %s</b></td></tr>' % (p[0], p[1], p[4], p[2], p[4], p[3], p[4]) for p in vals]
             html = html_page
-            response = html % (ver, '\n'.join(rows))
+            response = html % ('\n'.join(rows), str(gc.mem_free()))
  
-        conn.send(response)
+        conn.sendall(response)
         conn.close()
-        print('-- Before GC free: {} allocated: {}'.format(gc.mem_free(), gc.mem_alloc()))
+        #print('-- Before GC free: {} allocated: {}'.format(gc.mem_free(), gc.mem_alloc()))
         gc.collect()
-        print('-- After  GC free: {} allocated: {}'.format(gc.mem_free(), gc.mem_alloc()))
+        #print('-- After  GC free: {} allocated: {}'.format(gc.mem_free(), gc.mem_alloc()))
 
 
 except:
         print ('\n\nException in main server loop. Rebooting...\n\n')
         sleep_ms(5000)
         reset()
+

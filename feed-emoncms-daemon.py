@@ -2,15 +2,17 @@
 
 
 sensors = {
-    "ServerRoom" :["192.168.1.174","1phase"],
-    "MainPower"  :["192.168.1.178","3phase"],
-    "Lights"     :["192.168.1.179","1phase"],
+    "ServerRoom" :["192.168.1.101","1phase"],
+    "MainPower"  :["192.168.1.100","3phase"],
+    "Lights"     :["192.168.1.102","1phase"],
 }
+#    "MainPower"  :["192.168.1.178","3phase"],
 
-emoncms_server_ip = "192.168.1.254"
-emoncms_api_key   = "712e90ebae780d638d89ad1a37xxxxxx"
-feed_period       = 30
-debug             = 0
+emoncms_server_ip   = "192.168.1.254"
+emoncms_api_key     = "712e90ebae780d638d89ad1a37f1a3ab"
+feed_period         = 30
+timeout_read_sensor = 10
+debug               = 0
 
 #-------------------------------------------------------------------------------
 
@@ -79,12 +81,19 @@ def get_decode_json_from_url(url):
     req = urllib2.Request(url + "/json")
 
     try:
-        response = urllib2.urlopen(req, timeout=5)
+        response = urllib2.urlopen(req, timeout=timeout_read_sensor)
         raw_data = response.read()
         if (debug): print(raw_data)
     except:
-        log('ERROR: Can\'t get data from: ' + url)
-        return False
+        log('ERROR: Can\'t get data from: ' + url + "  Retrying after 5sec...")
+        time.sleep(5)
+        try:
+            response = urllib2.urlopen(req, timeout=timeout_read_sensor)
+            raw_data = response.read()
+            if (debug): print(raw_data)
+        except:
+            log('ERROR: 2nd time can\'t get data from: ' + url)
+            return False
 
     try:
         data = json.loads(raw_data)
